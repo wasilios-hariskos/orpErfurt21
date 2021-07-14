@@ -1,0 +1,233 @@
+---
+title: "Estimating Utility Functions"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+```{r message=FALSE, warning=FALSE}
+# install.packages("tidyverse")
+library(tidyverse)
+library(purrr)
+library(tidyr)
+```
+
+# Data
+
+The data for estimating the utility function of player B is from Charness and Rabin (2002: 829), Table 1, Two-person dictator games.
+
+```{r}
+# Spalten der Tabelle als Vektoren erstellen
+Game <- c("Berk29", "Barc2", "Berk17", "Berk23", "Barc8", "Berk15", "Berk26")
+LeftPayoffA <- c(400, 400, 400, 800, 300, 200, 0)
+LeftPayoffB <- c(400, 400, 400, 200, 600, 700, 800)
+RightPayoffA <- c(750, 750, 750, 0, 700, 600, 400) 
+RightPayoffB <- c(400, 375, 375, 0, 500, 600, 400)
+ObsProbRight <- c(.69, .48, .50, 0, .33, .73, .22)
+
+# Vektoren in eine Tabelle packen
+dataRaw <- data.frame(Game, 
+                   LeftPayoffA, 
+                   LeftPayoffB, 
+                   RightPayoffA, 
+                   RightPayoffB, 
+                   ObsProbRight)
+
+# Die Rohdaten ausgeben
+print(dataRaw)
+```
+
+# Utility function of player B
+
+The model is a simplified version from Charness and Rabin (2002: 822).
+
+```{r}
+# Nutzenfunktion definieren
+Utility <- function(ownPayoff, # Input1
+                    weightOtherPayoff,# Input2
+                    otherPayoff) { # Input3
+  weightOwnPayoff <- 1 - weightOtherPayoff # Calculation
+  return(weightOtherPayoff * otherPayoff + weightOwnPayoff * ownPayoff) # Output
+}
+
+# Anwendung der Nutzenfunktion
+Utility(ownPayoff = 5,
+        weightOtherPayoff = 0.5,
+        otherPayoff = 40)
+```
+We assume a fixed value for the parameter `weightPayoffA` and calculate the utility of B for our data. Then we predict which option will be chosen and calculate the sum of squared differences.
+
+```{r}
+# Das Gewicht, das Spieler B auf die Auszahlung von Spieler A legt
+parameter = .2
+
+# Berechnung der Nutzen von Spieler B für die Alternativen Left und Right
+# Berechnung der vorhergesagten Wahlwahrscheinlichkeit für die Alternative Right
+# Berechung der quadrierten Abweichungen zwischen vorhergesagten Wahlwahrscheinlichkeiten und der beobachteten Wahlwahrscheinlichkeiten bzw. Frequenzen
+dataFix <- dataRaw %>% 
+  mutate(LeftUtilityB = Utility(ownPayoff = LeftPayoffB, 
+                                weightOtherPayoff = parameter,
+                                otherPayoff = LeftPayoffA),
+         RightUtilityB = Utility(ownPayoff = RightPayoffB, 
+                                 weightOtherPayoff = parameter,
+                                 otherPayoff = RightPayoffA)) %>% 
+  mutate(PredProbRight = ifelse(test = RightUtilityB > LeftUtilityB, yes = 1, 
+                                ifelse(test = RightUtilityB == LeftUtilityB, yes = .5, no = 0)),
+         SquaredDiff = (ObsProbRight - PredProbRight)^2)
+
+# Summe der quadrierten Abweichungen
+sum(dataFix$SquaredDiff)
+
+```
+
+## Model with one free parameter
+
+We search for the parameter `weightPayoffA` that maximizes the fit to the data.
+
+
+```{r}
+vectorWeightOtherPayoff <- 0:100 / 100
+#vectorWeightOtherPayoff
+
+vectorSSD = rep(NA, length(vectorWeightOtherPayoff))
+count <- 1
+for (parameter in vectorWeightOtherPayoff) {
+dataEst <- dataRaw %>% 
+  mutate(LeftUtilityB = Utility(ownPayoff = LeftPayoffB, 
+                                weightOtherPayoff = parameter,
+                                otherPayoff = LeftPayoffA),
+         RightUtilityB = Utility(ownPayoff = RightPayoffB, 
+                                 weightOtherPayoff = parameter,
+                                 otherPayoff = RightPayoffA)) %>% 
+  mutate(PredProbRight = ifelse(test = RightUtilityB > LeftUtilityB, yes = 1, 
+                                ifelse(test = RightUtilityB == LeftUtilityB, yes = .5, no = 0)),
+         SquaredDiff = (ObsProbRight - PredProbRight)^2)
+
+SSD = sum(dataEst$SquaredDiff) # Sum of squared differences
+
+vectorSSD[count] = SSD
+
+count <- count + 1
+}
+
+dataEstimation <- data.frame(vectorWeightOtherPayoff, vectorSSD)
+```
+
+We plot the optimization search results
+
+```{r}
+plot(dataEstimation)
+```
+
+We print the table of the optimization results
+
+```{r}
+dataEstimation
+```
+# Why is a weight of .2 optimal?
+
+```{r}
+parameter = .2 # change to .2 and change to .21 - What do you observe?
+
+dataEst <- dataRaw %>% 
+  mutate(LeftUtilityB = Utility(ownPayoff = LeftPayoffB, 
+                                weightOtherPayoff = parameter,
+                                otherPayoff = LeftPayoffA),
+         RightUtilityB = Utility(ownPayoff = RightPayoffB, 
+                                 weightOtherPayoff = parameter,
+                                 otherPayoff = RightPayoffA)) %>% 
+  mutate(PredProbRight = ifelse(test = RightUtilityB > LeftUtilityB, yes = 1, 
+                                ifelse(test = RightUtilityB == LeftUtilityB, yes = .5, no = 0)),
+         SquaredDiff = (ObsProbRight - PredProbRight)^2)
+
+dataEst
+```
+
+The model predicts that the player will choose Left if weight < 0.2 or Right if weight > 0.2. Both predictions are suboptimal to weight == 0, which predicts that player B is indifferent between Left and Right in both games Barc8 and Berk15. 
+
+## Model with two free parameters
+
+```{r}
+sumSqDiff <- function(parameter, parameter2){
+
+dataEst <- dataRaw %>% 
+  mutate(LeftUtilityB = Utility(ownPayoff = LeftPayoffB, 
+                                weightOtherPayoff = parameter,
+                                otherPayoff = LeftPayoffA),
+         RightUtilityB = Utility(ownPayoff = RightPayoffB, 
+                                 weightOtherPayoff = parameter,
+                                 otherPayoff = RightPayoffA)) %>% 
+  mutate(PredProbRight = exp(RightUtilityB * parameter2) / 
+                        (exp(LeftUtilityB * parameter2) + exp(RightUtilityB * parameter2)),
+         SquaredDiff = (ObsProbRight - PredProbRight)^2)
+
+SSD = sum(dataEst$SquaredDiff) # Sum of squared differences is returned by function
+}
+
+print(sumSqDiff(parameter = .1, parameter2 = 0))
+```
+
+
+```{r}
+### Heatmap
+myheatmap <- function(parameter, parameter2, dev){
+# Grid
+comparison_grid <- expand.grid(par = seq(parameter * (1 - dev),
+                                         parameter * (1 + dev), 
+                                         length.out = 21),
+                               par2 = seq(parameter2 * (1 - dev),
+                                         parameter2 * (1 + dev), 
+                                         length.out = 21)) %>%
+  group_by(par, par2) %>%
+  nest()
+
+# Results
+grid_results <-
+  comparison_grid %>%
+  mutate(SSD = map2(par, par2, ~sumSqDiff(parameter = .x, parameter2 = .y))) %>% 
+  unnest(cols = SSD) %>% 
+  arrange(SSD)
+
+# Best fitting paramters
+opt_par <- grid_results$par[1]
+opt_par2 <- grid_results$par2[1]
+
+# Heatmap
+ggplot(data = grid_results) + 
+  geom_tile(aes(x = par, y = par2, fill = SSD)) +
+  geom_point(aes(x = opt_par, y = opt_par2, color = "red"))
+}
+```
+
+```{r}
+myheatmap(parameter = 0.1154826, # Gewicht auf Auszahlung von A
+          parameter2 = .007, # Gamma (Wie stark richte ich mich nach meinen Präferenzen? 0 = Random Choice , hohes Gamma = Nutzenmaximierung)
+          dev = 1)
+```
+
+```{r}
+#help(optim)
+
+sumSqDiff2 <- function(par){
+  parameter <- par[1]
+  parameter2 <- par[2]
+
+dataEst <- dataRaw %>% 
+  mutate(LeftUtilityB = Utility(ownPayoff = LeftPayoffB, 
+                                weightOtherPayoff = parameter,
+                                otherPayoff = LeftPayoffA),
+         RightUtilityB = Utility(ownPayoff = RightPayoffB, 
+                                 weightOtherPayoff = parameter,
+                                 otherPayoff = RightPayoffA)) %>% 
+  mutate(PredProbRight = exp(RightUtilityB * parameter2) / 
+                        (exp(LeftUtilityB * parameter2) + exp(RightUtilityB * parameter2)),
+         SquaredDiff = (ObsProbRight - PredProbRight)^2)
+
+SSD = sum(dataEst$SquaredDiff) # Sum of squared differences is returned by function
+}
+
+optim(par = c(0, .1), fn = sumSqDiff2)
+```
+
+
