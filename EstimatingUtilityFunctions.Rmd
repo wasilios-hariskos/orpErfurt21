@@ -1,9 +1,9 @@
 ---
 title: "Estimating Utility Functions"
 output:
-  word_document: default
   html_document:
     df_print: paged
+  word_document: default
   pdf_document: default
 ---
 
@@ -145,7 +145,7 @@ dataEst <- dataRaw %>%
 dataEst
 ```
 
-The model predicts that the player will choose Left if weight < 0.2 or Right if weight > 0.2. Both predictions are suboptimal to weight == 0, which predicts that player B is indifferent between Left and Right in both games Barc8 and Berk15. 
+The model predicts that the player will choose Left if weight < 0.2 or Right if weight > 0.2. Both predictions are suboptimal to weight == 0.2, which predicts that player B is indifferent between Left and Right in both games Barc8 and Berk15. 
 
 ## Model with two free parameters
 
