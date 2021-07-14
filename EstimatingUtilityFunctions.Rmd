@@ -1,9 +1,10 @@
 ---
 title: "Estimating Utility Functions"
 output:
+  word_document: default
   html_document:
     df_print: paged
-  word_document: default
+  pdf_document: default
 ---
 
 ```{r message=FALSE, warning=FALSE}
@@ -148,6 +149,8 @@ The model predicts that the player will choose Left if weight < 0.2 or Right if 
 
 ## Model with two free parameters
 
+We introduce a second parameter gamma (see Charness and Rabin 2002: 839). The precision parameter gamma measures the sensitivity of player B to differences in utility.
+
 ```{r}
 sumSqDiff <- function(parameter, parameter2){
 
@@ -201,10 +204,16 @@ ggplot(data = grid_results) +
 ```
 
 ```{r}
-myheatmap(parameter = 0.1154826, # Gewicht auf Auszahlung von A
-          parameter2 = .007, # Gamma (Wie stark richte ich mich nach meinen Präferenzen? 0 = Random Choice , hohes Gamma = Nutzenmaximierung)
-          dev = 1)
+myheatmap(parameter = 0.22, # Gewicht auf Auszahlung von A
+          parameter2 = .007, # Gamma*
+          dev = 1)# Intervall der Paramtervariation
+
+# * Wie stark richte ich mich nach meinen Präferenzen? 
+# 0 = Random Choice 
+# hohes Gamma = Nutzenmaximierung
 ```
+
+The red dot shows the best fitting parameter combination
 
 ```{r}
 #help(optim)
@@ -227,7 +236,58 @@ dataEst <- dataRaw %>%
 SSD = sum(dataEst$SquaredDiff) # Sum of squared differences is returned by function
 }
 
-optim(par = c(0, .1), fn = sumSqDiff2)
+optim(par = c(0, .1), # Startwerte für Parameter weightOtherPayoff, gamma
+      fn = sumSqDiff2) # zu minimierende funktion
 ```
 
+# Model with three free parameters
+
+We estimate a noisy utility function with different weights on other payoff depending on whether player B is better off or worse off.
+
+```{r message=FALSE, warning=FALSE}
+# Nutzenfunktion definieren
+Utility2 <- function(ownPayoff, # Input1
+                    weightOtherPayoffBetterOff,# Input2
+                    weightOtherPayoffWorseOff,# Input3
+                    otherPayoff) { # Input4
+  
+  weightOwnPayoff <- 1 - weightOtherPayoffBetterOff # Calculation
+  
+  if (otherPayoff > ownPayoff) {
+    weightOwnPayoff <- 1 - weightOtherPayoffWorseOff # Calculation
+  }
+  
+  return( (1 - weightOwnPayoff)  * otherPayoff + weightOwnPayoff * ownPayoff) # Output
+}
+
+sumSqDiff3 <- function(par){
+  parameter <- par[1] # gewicht anderer payoff, wenn besser gestellt
+  parameter2 <- par[2] # gewicht anderer payoff, wenn schlechter gestellt
+  parameter3 <- par[3]# gamma
+
+dataEst <- dataRaw %>% 
+  mutate(LeftUtilityB = Utility2(ownPayoff = LeftPayoffB, 
+                                 weightOtherPayoffBetterOff = parameter,
+                                 weightOtherPayoffWorseOff = parameter2,
+                                 otherPayoff = LeftPayoffA),
+         RightUtilityB = Utility2(ownPayoff = RightPayoffB,
+                                  weightOtherPayoffBetterOff = parameter,
+                                  weightOtherPayoffWorseOff = parameter2,
+                                  otherPayoff = RightPayoffA)) %>% 
+  mutate(PredProbRight = exp(RightUtilityB * parameter3) / 
+                        (exp(LeftUtilityB * parameter3) + exp(RightUtilityB * parameter3)),
+         SquaredDiff = (ObsProbRight - PredProbRight)^2)
+
+SSD = sum(dataEst$SquaredDiff) # Sum of squared differences is returned by function
+}
+
+optim(par = c(0, 0, 0), # Startwerte für Parameter = *
+      fn = sumSqDiff3)
+
+# * weightOtherPayoffBetterOff, weightOtherPayoffWorseOff, gamma  
+```
+
++ Player B puts a higher weight on the other payoff when he is better off
++ The model fits the data better than a model that does not take the direction of inequality into account
++ In comparison to Charness and Rabin we used less games to estimate the utility function and a different criterion: minimize sum squared differences instead of maximize log likelihood
 
